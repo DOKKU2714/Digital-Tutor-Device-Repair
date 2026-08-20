@@ -1,0 +1,262 @@
+<script>
+  const $ = (selector) => document.querySelector(selector);
+  let publicConfig = { statuses:['접수','수리 진행 중','수리 완료','반려'], statusColors:{} };
+  let adminToken = sessionStorage.getItem('dtr_admin_token') || '';
+  let adminDisplayName = sessionStorage.getItem('dtr_admin_name') || '';
+  let loadingCount = 0;
+  let adminRequests = [];
+  let adminCurrentPage = 1;
+
+  document.addEventListener('DOMContentLoaded', () => {
+    showLoading('화면을 준비하는 중입니다…');
+    google.script.run.withSuccessHandler(config => { publicConfig = config; populateAdminStatusFilter(); hideLoading(); }).withFailureHandler(error => { hideLoading(); throwServerError(error); }).getPublicConfig();
+    document.querySelectorAll('.tab-button').forEach(button => button.addEventListener('click', () => handleTabClick(button.dataset.tab)));
+    document.querySelectorAll('input[name="applicantType"]').forEach(input => input.addEventListener('change', updateApplicantFields));
+    document.querySelectorAll('input[name="lookupType"]').forEach(input => input.addEventListener('change', updateLookupFields));
+    document.querySelectorAll('input[name="lockType"]').forEach(input => input.addEventListener('change', updateLockFields));
+    $('#pattern-image').addEventListener('change', () => showFileNames($('#pattern-image'), $('#pattern-file-name')));
+    $('#additional-images').addEventListener('change', () => showFileNames($('#additional-images'), $('#additional-file-name')));
+    $('#request-form').addEventListener('submit', submitForm);
+    $('#lookup-form').addEventListener('submit', lookupForm);
+    $('#admin-login-form').addEventListener('submit', submitAdminLogin);
+    $('#close-admin-modal').addEventListener('click', closeAdminLogin);
+    $('#admin-refresh').addEventListener('click', () => loadAdminRequests());
+    $('#admin-logout').addEventListener('click', logoutAdmin);
+    $('#admin-filter-form').addEventListener('submit', event => { event.preventDefault(); loadAdminRequests(); });
+    $('#admin-login-modal').addEventListener('click', event => { if (event.target.id === 'admin-login-modal') closeAdminLogin(); });
+  });
+
+  function handleTabClick(tab) {
+    if (tab === 'admin' && !adminToken) { openAdminLogin(); return; }
+    switchTab(tab);
+    if (tab === 'admin') loadAdminRequests();
+  }
+
+  function switchTab(tab) {
+    document.querySelectorAll('.tab-button').forEach(button => button.classList.toggle('active', button.dataset.tab === tab));
+    document.querySelectorAll('.tab-panel').forEach(panel => panel.classList.toggle('active', panel.id === tab + '-tab'));
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function updateApplicantFields() {
+    const type = document.querySelector('input[name="applicantType"]:checked').value;
+    $('#teacher-fields').classList.toggle('hidden', type !== 'teacher');
+    $('#student-fields').classList.toggle('hidden', type !== 'student');
+    $('#teacher-fields').querySelectorAll('input').forEach(input => { input.required = type === 'teacher'; });
+    $('#student-fields').querySelectorAll('input').forEach(input => { input.required = type === 'student'; });
+  }
+
+  function updateLookupFields() {
+    const type = document.querySelector('input[name="lookupType"]:checked').value;
+    $('#lookup-teacher-fields').classList.toggle('hidden', type !== 'teacher');
+    $('#lookup-student-fields').classList.toggle('hidden', type !== 'student');
+  }
+
+  function updateLockFields() {
+    const lockType = document.querySelector('input[name="lockType"]:checked').value;
+    $('#pattern-image-field').classList.toggle('hidden', lockType !== 'pattern');
+    $('#device-password-field').classList.toggle('hidden', lockType !== 'password');
+  }
+
+  async function submitForm(event) {
+    event.preventDefault();
+    const form = event.target;
+    if (!form.reportValidity()) return;
+    const button = $('#submit-button');
+    button.disabled = true;
+    button.innerHTML = '사진을 준비하고 접수 중입니다…';
+    showLoading('수리 요청을 접수하는 중입니다…');
+    try {
+      const type = form.querySelector('input[name="applicantType"]:checked').value;
+      const lockType = form.querySelector('input[name="lockType"]:checked').value;
+      const payload = {
+        applicantType: type,
+        teacherName: form.teacherName.value,
+        teacherPhone: form.teacherPhone.value,
+        studentNumber: form.studentNumber.value,
+        studentName: form.studentName.value,
+        studentGoogleId: form.studentGoogleId.value,
+        studentGooglePassword: form.studentGooglePassword.value,
+        deviceModel: form.deviceModel.value,
+        deviceNumber: form.deviceNumber.value,
+        lockType,
+        devicePassword: form.devicePassword.value,
+        symptoms: form.symptoms.value,
+        referenceNotes: form.referenceNotes.value,
+        patternImage: lockType === 'pattern' ? await fileToDataUrl($('#pattern-image').files[0]) : '',
+        additionalImages: await filesToDataUrls($('#additional-images').files)
+      };
+      validateImageSize(payload.patternImage, '패턴 사진');
+      payload.additionalImages.forEach(data => validateImageSize(data, '추가 사진'));
+      google.script.run.withSuccessHandler(result => {
+        hideLoading();
+        form.reset(); updateApplicantFields(); updateLockFields();
+        $('#pattern-file-name').textContent = ''; $('#additional-file-name').textContent = '';
+        button.disabled = false; button.innerHTML = '수리 요청 접수하기 <span>→</span>';
+        showToast('접수가 완료되었습니다. 신청번호: ' + result.requestId);
+        switchTab('lookup');
+      }).withFailureHandler(error => { hideLoading(); throwServerError(error); resetSubmitButton(button); }).submitRequest(payload);
+    } catch (error) { hideLoading(); showToast(error.message || '입력 내용을 확인해 주세요.', true); resetSubmitButton(button); }
+  }
+
+  function lookupForm(event) {
+    event.preventDefault();
+    const form = event.target;
+    if (!form.reportValidity()) return;
+    const type = form.querySelector('input[name="lookupType"]:checked').value;
+    const query = { applicantType:type, teacherName:form.lookupTeacherName.value, teacherPhone:form.lookupTeacherPhone.value, studentNumber:form.lookupStudentNumber.value, studentName:form.lookupStudentName.value };
+    const button = $('#lookup-button'); button.disabled = true; button.textContent = '조회 중…';
+    showLoading('내 신청 내역을 불러오는 중입니다…');
+    google.script.run.withSuccessHandler(results => { hideLoading(); button.disabled = false; button.textContent = '신청 내역 조회하기'; renderResults(results); }).withFailureHandler(error => { hideLoading(); button.disabled = false; button.textContent = '신청 내역 조회하기'; throwServerError(error); }).findMyRequests(query);
+  }
+
+  function populateAdminStatusFilter() {
+    const select = $('#admin-status-filter');
+    if (!select || select.options.length > 1) return;
+    (publicConfig.statuses || []).forEach(status => {
+      const option = document.createElement('option'); option.value = status; option.textContent = status; select.appendChild(option);
+    });
+  }
+
+  function openAdminLogin() {
+    $('#admin-login-modal').classList.remove('hidden');
+    window.setTimeout(() => $('#admin-username').focus(), 50);
+  }
+
+  function closeAdminLogin() { $('#admin-login-modal').classList.add('hidden'); }
+
+  function submitAdminLogin(event) {
+    event.preventDefault();
+    const form = event.target;
+    if (!form.reportValidity()) return;
+    const button = $('#admin-login-button'); button.disabled = true; button.textContent = '로그인 중…';
+    showLoading('관리자 정보를 확인하는 중입니다…');
+    google.script.run.withSuccessHandler(result => {
+      hideLoading();
+      adminToken = result.token; adminDisplayName = result.displayName;
+      sessionStorage.setItem('dtr_admin_token', adminToken); sessionStorage.setItem('dtr_admin_name', adminDisplayName);
+      $('#admin-welcome').textContent = adminDisplayName + ' 관리자';
+      form.reset(); closeAdminLogin(); $('#admin-dashboard').classList.remove('hidden'); switchTab('admin'); loadAdminRequests();
+      button.disabled = false; button.textContent = '로그인';
+    }).withFailureHandler(error => {
+      hideLoading(); button.disabled = false; button.textContent = '로그인'; throwServerError(error);
+    }).adminLogin({ username:form.username.value, password:form.password.value });
+  }
+
+  function getAdminFilter() { return { status:$('#admin-status-filter').value, search:$('#admin-search').value }; }
+
+  function loadAdminRequests() {
+    if (!adminToken) { openAdminLogin(); return; }
+    populateAdminStatusFilter();
+    $('#admin-results').innerHTML = '<div class="result-message">신청 내역을 불러오는 중입니다…</div>';
+    showLoading('관리자 신청 내역을 불러오는 중입니다…');
+    google.script.run.withSuccessHandler(data => { hideLoading(); $('#admin-dashboard').classList.remove('hidden'); $('#admin-welcome').textContent = adminDisplayName + ' 관리자'; renderAdminDashboard(data); }).withFailureHandler(error => {
+      hideLoading(); if ((error && error.message || '').indexOf('로그인') !== -1) handleAdminAuthError(); else throwServerError(error);
+    }).getAdminRequests(adminToken, getAdminFilter());
+  }
+
+  function renderAdminDashboard(data) {
+    const stats = data.stats || { total:0, byStatus:{} };
+    $('#stat-total').textContent = stats.total || 0;
+    $('#stat-received').textContent = stats.byStatus['접수'] || 0;
+    $('#stat-progress').textContent = stats.byStatus['수리 진행 중'] || 0;
+    $('#stat-complete').textContent = stats.byStatus['수리 완료'] || 0;
+    $('#stat-rejected').textContent = stats.byStatus['반려'] || 0;
+    adminRequests = data.requests || [];
+    adminCurrentPage = 1;
+    renderAdminPage();
+  }
+
+  function renderAdminPage() {
+    const target = $('#admin-results');
+    if (!adminRequests.length) { target.innerHTML = '<div class="result-message">조건에 맞는 신청 내역이 없습니다.</div>'; return; }
+    const pageSize = Number(publicConfig.adminPageSize) || 10;
+    const totalPages = Math.max(1, Math.ceil(adminRequests.length / pageSize));
+    adminCurrentPage = Math.min(Math.max(1, adminCurrentPage), totalPages);
+    const start = (adminCurrentPage - 1) * pageSize;
+    const pageItems = adminRequests.slice(start, start + pageSize);
+    target.innerHTML = `<div class="admin-list">${pageItems.map(item => {
+      const applicant = item.applicantType === 'teacher'
+        ? adminDetail('신청자', item.teacherName) + adminDetail('연락처', item.teacherPhone)
+        : adminDetail('신청자', item.studentName) + adminDetail('학번', item.studentNumber) + adminDetail('구글 아이디', item.studentGoogleId);
+      const sensitive = adminDetail('구글 비밀번호', item.studentGooglePassword || '저장되지 않음') + adminDetail('기기 잠금 비밀번호', item.devicePassword || '저장되지 않음');
+      const images = [item.patternImageUrl].concat(item.additionalImageUrls || []).filter(Boolean).map((url, i) => `<a href="${escapeHtml(url)}" target="_blank" rel="noopener">사진 ${i + 1} 열기</a>`).join(' · ') || '첨부 없음';
+      const rejectionFieldClass = item.status === '반려' ? 'field admin-rejection-field' : 'field admin-rejection-field hidden';
+      return `<details class="admin-request-item" data-request-id="${escapeHtml(item.requestId)}"><summary><div class="admin-list-title"><strong>${escapeHtml(item.requestId)}</strong><small>${escapeHtml(item.submittedAt)} · ${escapeHtml(item.applicantType === 'teacher' ? item.teacherName : item.studentName)} · ${escapeHtml(item.deviceModel)}</small></div><span class="admin-list-symptom">${escapeHtml(item.symptoms)}</span><span class="status-pill" style="background:${publicConfig.statusColors[item.status] || '#687582'}">${escapeHtml(item.status)}</span><span class="admin-expand-icon" aria-hidden="true">＋</span></summary><div class="admin-request-body"><div class="admin-detail-grid">${applicant}${adminDetail('기기 모델', item.deviceModel)}${adminDetail('기기 번호', item.deviceNumber)}${adminDetail('잠금 방식', item.lockType)}${adminDetail('첨부 사진', images, true)}</div><div class="admin-long-fields">${adminLongDetail('증상', item.symptoms)}${adminLongDetail('참고사항', item.referenceNotes || '없음')}</div><details class="sensitive-details"><summary>민감정보 확인</summary><div class="admin-detail-grid">${sensitive}</div></details><div class="admin-status-editor"><label class="field"><span>신청 상태</span><select class="admin-request-status">${adminStatusOptions(item.status)}</select></label><label class="${rejectionFieldClass}"><span>반려 사유 <small>(반려 상태일 때 필수)</small></span><textarea class="admin-rejection-reason" rows="2" placeholder="반려 사유를 입력해 주세요.">${escapeHtml(item.rejectionReason)}</textarea></label><button class="primary-button small-button admin-save-status" type="button">상태 저장</button></div></div></details>`;
+    }).join('')}</div>${adminPagination(totalPages)}`;
+    target.querySelectorAll('.admin-save-status').forEach(button => button.addEventListener('click', () => saveAdminStatus(button)));
+    target.querySelectorAll('.admin-request-status').forEach(select => select.addEventListener('change', () => {
+      const rejectionField = select.closest('.admin-status-editor').querySelector('.admin-rejection-field');
+      rejectionField.classList.toggle('hidden', select.value !== '반려');
+    }));
+    target.querySelectorAll('.admin-page-button').forEach(button => button.addEventListener('click', () => { adminCurrentPage = Number(button.dataset.page); renderAdminPage(); window.scrollTo({ top: 0, behavior: 'smooth' }); }));
+  }
+
+  function adminPagination(totalPages) {
+    if (totalPages <= 1) return '';
+    const buttons = [];
+    const visiblePages = Array.from(new Set([1, 2, adminCurrentPage - 1, adminCurrentPage, adminCurrentPage + 1, totalPages - 1, totalPages]))
+      .filter(page => page >= 1 && page <= totalPages).sort((a, b) => a - b);
+    let previousPage = 0;
+    visiblePages.forEach(page => {
+      if (previousPage && page - previousPage > 1) buttons.push('<span class="pagination-gap">…</span>');
+      buttons.push(`<button class="admin-page-button${page === adminCurrentPage ? ' active' : ''}" type="button" data-page="${page}">${page}</button>`);
+      previousPage = page;
+    });
+    return `<nav class="admin-pagination" aria-label="관리자 신청 목록 페이지 이동"><button class="admin-page-button page-arrow" type="button" data-page="${adminCurrentPage - 1}"${adminCurrentPage === 1 ? ' disabled' : ''}>‹</button>${buttons.join('')}<button class="admin-page-button page-arrow" type="button" data-page="${adminCurrentPage + 1}"${adminCurrentPage === totalPages ? ' disabled' : ''}>›</button><span class="pagination-label">${adminCurrentPage} / ${totalPages} 페이지</span></nav>`;
+  }
+
+  function adminStatusOptions(current) { return (publicConfig.statuses || []).map(status => `<option value="${escapeHtml(status)}"${status === current ? ' selected' : ''}>${escapeHtml(status)}</option>`).join(''); }
+  function adminDetail(label, value, html = false) { return `<div><dt>${escapeHtml(label)}</dt><dd>${html ? value : escapeHtml(value || '없음')}</dd></div>`; }
+  function adminLongDetail(label, value) { return `<div><strong>${escapeHtml(label)}</strong><p>${escapeHtml(value || '없음').replace(/\n/g, '<br>')}</p></div>`; }
+
+  function saveAdminStatus(button) {
+    const card = button.closest('.admin-request-card');
+    const requestId = card.dataset.requestId;
+    const status = card.querySelector('.admin-request-status').value;
+    const reason = card.querySelector('.admin-rejection-reason').value;
+    button.disabled = true; button.textContent = '저장 중…'; showLoading('신청 상태를 저장하는 중입니다…');
+    google.script.run.withSuccessHandler(result => { hideLoading(); showToast(result.requestId + ' 상태가 저장되었습니다.'); loadAdminRequests(); }).withFailureHandler(error => { hideLoading(); button.disabled = false; button.textContent = '상태 저장'; if ((error && error.message || '').indexOf('로그인') !== -1) handleAdminAuthError(); else throwServerError(error); }).updateRequestStatus(adminToken, requestId, status, reason);
+  }
+
+  function handleAdminAuthError() {
+    adminToken = ''; adminDisplayName = ''; sessionStorage.removeItem('dtr_admin_token'); sessionStorage.removeItem('dtr_admin_name'); $('#admin-dashboard').classList.add('hidden'); openAdminLogin();
+  }
+
+  function logoutAdmin() {
+    const oldToken = adminToken; adminToken = ''; adminDisplayName = '';
+    sessionStorage.removeItem('dtr_admin_token'); sessionStorage.removeItem('dtr_admin_name'); $('#admin-dashboard').classList.add('hidden'); switchTab('request');
+    google.script.run.adminLogout(oldToken);
+    showToast('관리자 로그아웃이 완료되었습니다.');
+  }
+
+  function showLoading(message) {
+    loadingCount += 1;
+    $('#loading-message').textContent = message || '데이터를 불러오는 중입니다…';
+    $('#loading-modal').classList.remove('hidden');
+  }
+
+  function hideLoading() {
+    loadingCount = Math.max(0, loadingCount - 1);
+    if (loadingCount === 0) $('#loading-modal').classList.add('hidden');
+  }
+
+  function renderResults(results) {
+    const target = $('#lookup-results');
+    if (!results.length) { target.innerHTML = '<div class="result-message">일치하는 신청 내역이 없습니다.<br>입력한 정보를 다시 확인해 주세요.</div>'; return; }
+    target.innerHTML = results.map(item => {
+      const color = publicConfig.statusColors[item.status] || '#687582';
+      const rejection = item.status === '반려' && item.rejectionReason ? `<div class="rejection"><strong>반려 사유</strong><br>${escapeHtml(item.rejectionReason)}</div>` : '';
+      return `<article class="request-result"><div class="request-result-top"><div><div class="request-id">${escapeHtml(item.requestId)}</div><small>${escapeHtml(item.submittedAt)} 접수</small></div><span class="status-pill" style="background:${color}">${escapeHtml(item.status)}</span></div><dl class="result-grid"><div><dt>신청자</dt><dd>${escapeHtml(item.applicantName)}</dd></div><div><dt>기기</dt><dd>${escapeHtml(item.deviceModel)}</dd></div><div><dt>기기 번호</dt><dd>${escapeHtml(item.deviceNumber)}</dd></div><div><dt>마지막 상태 변경</dt><dd>${escapeHtml(item.updatedAt || item.submittedAt)}</dd></div><div><dt>증상</dt><dd>${escapeHtml(item.symptoms)}</dd></div></dl>${rejection}</article>`;
+    }).join('');
+  }
+
+  function showFileNames(input, target) { target.textContent = Array.from(input.files).map(file => file.name).join(', '); }
+  function fileToDataUrl(file) { return file ? new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(file); }) : Promise.resolve(''); }
+  async function filesToDataUrls(files) { return Promise.all(Array.from(files).map(fileToDataUrl)); }
+  function validateImageSize(dataUrl, label) { if (dataUrl && Math.ceil((dataUrl.length * 3) / 4) > (publicConfig.maxImageBytes || 5242880)) throw new Error(label + '의 용량은 5MB 이하로 올려 주세요.'); }
+  function resetSubmitButton(button) { button.disabled = false; button.innerHTML = '수리 요청 접수하기 <span>→</span>'; }
+  function throwServerError(error) { showToast(error && error.message ? error.message : '처리 중 오류가 발생했습니다.', true); }
+  function showToast(message, isError = false) { const toast = $('#toast'); toast.textContent = message; toast.className = 'toast show' + (isError ? ' error' : ''); window.clearTimeout(showToast.timer); showToast.timer = window.setTimeout(() => { toast.className = 'toast'; }, 4500); }
+  function escapeHtml(value) { return String(value == null ? '' : value).replace(/[&<>'"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char])); }
+</script>

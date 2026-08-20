@@ -1,0 +1,12 @@
+{
+  "scriptId": "15W7IJu2HQ6SMRUFrSwiWEH8p4VTXn4MwANJIGfwdArNCFdbtTvmJTvqc",
+  "rootDir": ".",
+  "filePushOrder": [
+    "appsscript.json",
+    "Config.gs",
+    "Code.gs",
+    "Styles.html",
+    "Scripts.html",
+    "Index.html"
+  ]
+}

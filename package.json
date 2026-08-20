@@ -1,0 +1,14 @@
+{
+  "name": "digital-tutor-device-repair",
+  "private": true,
+  "scripts": {
+    "clasp:login": "clasp login",
+    "clasp:push": "clasp push",
+    "clasp:pull": "clasp pull",
+    "clasp:open": "clasp open",
+    "clasp:deploy": "clasp deploy"
+  },
+  "devDependencies": {
+    "@google/clasp": "^3.0.6"
+  }
+}

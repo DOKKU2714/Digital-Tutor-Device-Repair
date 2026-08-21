@@ -7,6 +7,7 @@
   let adminRequests = [];
   let adminCurrentPage = 1;
   let currentRequestStep = 1;
+  let currentLookupStep = 1;
 
   document.addEventListener('DOMContentLoaded', () => {
     showLoading('화면을 준비하는 중입니다…');
@@ -14,12 +15,16 @@
     document.querySelectorAll('[data-view]').forEach(button => button.addEventListener('click', () => openView(button.dataset.view)));
     document.querySelectorAll('.back-home,.wizard-home,.completion-home').forEach(button => button.addEventListener('click', returnHome));
     document.querySelectorAll('input[name="applicantType"]').forEach(input => input.addEventListener('change', () => { updateApplicantFields(); updateWizardNavigation(); }));
-    document.querySelectorAll('input[name="lookupType"]').forEach(input => input.addEventListener('change', updateLookupFields));
+    document.querySelectorAll('input[name="lookupType"]').forEach(input => input.addEventListener('change', () => { updateLookupFields(); updateLookupNavigation(); }));
     document.querySelectorAll('input[name="lockType"]').forEach(input => input.addEventListener('change', () => { updateLockFields(); updateWizardNavigation(); }));
     $('#request-form').addEventListener('input', updateWizardNavigation);
     $('#request-form').addEventListener('change', updateWizardNavigation);
+    $('#lookup-form').addEventListener('input', updateLookupNavigation);
+    $('#lookup-form').addEventListener('change', updateLookupNavigation);
     document.querySelectorAll('[data-next]').forEach(button => button.addEventListener('click', () => advanceRequestStep(1)));
     document.querySelectorAll('[data-prev]').forEach(button => button.addEventListener('click', () => advanceRequestStep(-1)));
+    $('.lookup-next').addEventListener('click', () => advanceLookupStep(1));
+    $('.lookup-prev').addEventListener('click', () => advanceLookupStep(-1));
     $('#pattern-image').addEventListener('change', () => { showFileNames($('#pattern-image'), $('#pattern-file-name')); updateWizardNavigation(); });
     $('#additional-images').addEventListener('change', () => showFileNames($('#additional-images'), $('#additional-file-name')));
     $('#request-form').addEventListener('submit', submitForm);
@@ -34,11 +39,13 @@
     updateLookupFields();
     updateLockFields();
     updateWizardNavigation();
+    updateLookupNavigation();
   });
 
   function openView(view) {
     if (view === 'admin') { handleAdminOpen(); return; }
-    if (view === 'request') { resetRequestWizard(); }
+    if (view === 'request') resetRequestWizard();
+    if (view === 'lookup') resetLookupWizard();
     switchTab(view);
   }
 
@@ -58,6 +65,7 @@
   function returnHome() {
     closeAdminLogin();
     resetRequestWizard();
+    resetLookupWizard();
     switchTab('home');
   }
 
@@ -74,19 +82,19 @@
 
   function showRequestStep(step, direction) {
     currentRequestStep = Math.min(4, Math.max(1, step));
-    document.querySelectorAll('.wizard-step').forEach(panel => {
+    document.querySelectorAll('#request-form .wizard-step').forEach(panel => {
       const isActive = Number(panel.dataset.step) === currentRequestStep;
       panel.classList.toggle('active', isActive);
       if (isActive) panel.dataset.direction = direction < 0 ? 'back' : 'forward';
     });
-    document.querySelectorAll('.progress-item').forEach(item => {
+    document.querySelectorAll('#request-form .progress-item').forEach(item => {
       const itemStep = Number(item.dataset.progress);
       item.classList.toggle('active', itemStep === currentRequestStep);
       item.classList.toggle('done', itemStep < currentRequestStep);
     });
-    document.querySelectorAll('.progress-line').forEach((line, index) => line.classList.toggle('done', index < currentRequestStep - 1));
+    document.querySelectorAll('#request-form .progress-line').forEach((line, index) => line.classList.toggle('done', index < currentRequestStep - 1));
     updateWizardNavigation();
-    const title = $('.wizard-step.active h2');
+    const title = $('#request-form .wizard-step.active h2');
     if (title) window.setTimeout(() => {
       if (!$('#request-screen').classList.contains('active')) return;
       title.setAttribute('tabindex', '-1');
@@ -111,12 +119,77 @@
     studentFields.querySelectorAll('input').forEach(input => { input.required = type === 'student'; });
   }
 
+  function resetLookupWizard() {
+    const form = $('#lookup-form');
+    form.reset();
+    currentLookupStep = 1;
+    $('#lookup-results').innerHTML = '';
+    updateLookupFields();
+    showLookupStep(1, 0);
+  }
+
+  function showLookupStep(step, direction) {
+    currentLookupStep = Math.min(2, Math.max(1, step));
+    document.querySelectorAll('#lookup-form .wizard-step').forEach(panel => {
+      const isActive = Number(panel.dataset.lookupStep) === currentLookupStep;
+      panel.classList.toggle('active', isActive);
+      if (isActive) panel.dataset.direction = direction < 0 ? 'back' : 'forward';
+    });
+    document.querySelectorAll('#lookup-form .progress-item').forEach(item => {
+      const itemStep = Number(item.dataset.lookupProgress);
+      item.classList.toggle('active', itemStep === currentLookupStep);
+      item.classList.toggle('done', itemStep < currentLookupStep);
+    });
+    document.querySelectorAll('#lookup-form .progress-line').forEach((line, index) => line.classList.toggle('done', index < currentLookupStep - 1));
+    updateLookupNavigation();
+    const title = $('#lookup-form .wizard-step.active h2');
+    if (title) window.setTimeout(() => {
+      if (!$('#lookup-screen').classList.contains('active')) return;
+      title.setAttribute('tabindex', '-1');
+      title.focus();
+    }, 120);
+  }
+
+  function advanceLookupStep(direction) {
+    if (direction > 0 && !isLookupStepComplete(currentLookupStep)) { reportLookupStepValidity(); return; }
+    showLookupStep(currentLookupStep + direction, direction);
+  }
+
   function updateLookupFields() {
-    const type = document.querySelector('input[name="lookupType"]:checked').value;
+    const selected = document.querySelector('input[name="lookupType"]:checked');
+    const type = selected ? selected.value : 'teacher';
     $('#lookup-teacher-fields').classList.toggle('hidden', type !== 'teacher');
     $('#lookup-student-fields').classList.toggle('hidden', type !== 'student');
     $('#lookup-teacher-fields').querySelectorAll('input').forEach(input => { input.required = type === 'teacher'; });
     $('#lookup-student-fields').querySelectorAll('input').forEach(input => { input.required = type === 'student'; });
+  }
+
+  function isLookupStepComplete(step) {
+    if (step === 1) return Boolean(document.querySelector('input[name="lookupType"]:checked'));
+    const panel = $('#lookup-form .wizard-step[data-lookup-step="' + step + '"]');
+    if (!panel) return false;
+    const requiredFields = Array.from(panel.querySelectorAll('[required]')).filter(field => !field.closest('.hidden'));
+    return requiredFields.every(field => field.checkValidity());
+  }
+
+  function reportLookupStepValidity() {
+    const panel = $('#lookup-form .wizard-step.active');
+    const firstInvalid = panel && Array.from(panel.querySelectorAll('[required]')).find(field => !field.closest('.hidden') && !field.checkValidity());
+    if (firstInvalid) firstInvalid.reportValidity();
+    else if (currentLookupStep === 1) showToast('신청자 유형을 선택해 주세요.', true);
+    else showToast('필수 항목을 모두 입력해 주세요.', true);
+  }
+
+  function updateLookupNavigation() {
+    const panel = $('#lookup-form .wizard-step.active');
+    if (!panel) return;
+    const complete = isLookupStepComplete(currentLookupStep);
+    const next = panel.querySelector('.lookup-next');
+    const submit = panel.querySelector('.lookup-submit');
+    const hint = panel.querySelector('.wizard-hint');
+    if (next) next.classList.toggle('hidden', !complete);
+    if (submit) submit.classList.toggle('hidden', !complete);
+    if (hint) hint.textContent = complete ? '입력이 완료되었어요.' : (currentLookupStep === 1 ? '신청자 유형을 선택해 주세요.' : '필수 항목을 모두 입력해 주세요.');
   }
 
   function updateLockFields() {
@@ -199,7 +272,8 @@
   function lookupForm(event) {
     event.preventDefault();
     const form = event.target;
-    if (!form.reportValidity()) return;
+    if (currentLookupStep !== 2) { advanceLookupStep(1); return; }
+    if (!isLookupStepComplete(2) || !form.reportValidity()) { reportLookupStepValidity(); return; }
     const type = form.querySelector('input[name="lookupType"]:checked').value;
     const query = { applicantType:type, teacherName:form.lookupTeacherName.value, teacherPhone:form.lookupTeacherPhone.value, studentNumber:form.lookupStudentNumber.value, studentName:form.lookupStudentName.value };
     const button = $('#lookup-button');
@@ -329,5 +403,5 @@
   function resetSubmitButton(button) { button.disabled = false; button.innerHTML = '수리 요청 접수하기 <span>→</span>'; }
   function throwServerError(error) { showToast(error && error.message ? error.message : '처리 중 오류가 발생했습니다.', true); }
   function showToast(message, isError = false) { const toast = $('#toast'); toast.textContent = message; toast.className = 'toast show' + (isError ? ' error' : ''); window.clearTimeout(showToast.timer); showToast.timer = window.setTimeout(() => { toast.className = 'toast'; }, 4500); }
-  function escapeHtml(value) { return String(value == null ? '' : value).replace(/[&<>'"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char])); }
+  function escapeHtml(value) { return String(value == null ? '' : value).replace(/[&<>'\"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','\"':'&quot;'}[char])); }
 </script>

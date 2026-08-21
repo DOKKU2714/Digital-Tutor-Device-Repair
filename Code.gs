@@ -7,7 +7,7 @@ const REQUEST_HEADERS = [
   'status', 'rejectionReason', 'updatedAt'
 ];
 const ADMIN_HEADERS = ['username', 'password', 'displayName', 'isActive'];
-const ADMIN_SESSION_PROPERTY = 'dtr_admin_sessions';
+const ADMIN_TOKEN_SECRET_PROPERTY = 'dtr_admin_token_secret';
 const LOCK_TYPES = Object.freeze({ pattern: 'pattern', password: 'password', none: 'none' });
 
 function doGet() {
@@ -132,7 +132,7 @@ function findMyRequests(query) {
     .sort(function(a, b) { return b.submittedAtTimestamp - a.submittedAtTimestamp; });
 }
 
-/** AdminUsers 시트에 등록된 계정으로 관리자 세션을 발급합니다. */
+/** AdminUsers 시트에 등록된 계정으로 관리자 인증 토큰을 발급합니다. */
 function adminLogin(credentials) {
   const username = clean_(credentials && credentials.username);
   const password = clean_(credentials && credentials.password);
@@ -148,14 +148,8 @@ function adminLogin(credentials) {
   });
   if (!matched) throw new Error('관리자 아이디 또는 비밀번호가 올바르지 않습니다.');
 
-  const token = Utilities.getUuid();
-  const sessions = pruneAdminSessions_(getAdminSessions_());
-  sessions[token] = {
-    username: username,
-    expiresAt: Date.now() + CONFIG.ADMIN_SESSION_TTL_SECONDS * 1000
-  };
-  saveAdminSessions_(sessions);
-
+  const expiresAt = Date.now() + CONFIG.ADMIN_SESSION_TTL_SECONDS * 1000;
+  const token = createAdminToken_(username, expiresAt);
   return {
     success: true,
     token: token,
@@ -164,12 +158,8 @@ function adminLogin(credentials) {
 }
 
 function adminLogout(token) {
-  if (!token) return { success: true };
-  const sessions = getAdminSessions_();
-  if (sessions[token]) {
-    delete sessions[token];
-    saveAdminSessions_(sessions);
-  }
+  // 관리자 인증은 서버 저장 세션이 아닌 서명된 단기 토큰으로 관리합니다.
+  // 클라이언트에서 토큰을 삭제하면 로그아웃이 완료됩니다.
   return { success: true };
 }
 
@@ -259,41 +249,57 @@ function getRawAdminUsersSheet_() {
   return sheet;
 }
 
-function getAdminSessions_() {
+function getAdminTokenSecret_() {
   const properties = PropertiesService.getScriptProperties();
-  const raw = properties.getProperty(ADMIN_SESSION_PROPERTY);
-  if (!raw) return {};
-  try {
-    const sessions = JSON.parse(raw);
-    return sessions && typeof sessions === 'object' ? sessions : {};
-  } catch (error) {
-    properties.deleteProperty(ADMIN_SESSION_PROPERTY);
-    return {};
+  let secret = properties.getProperty(ADMIN_TOKEN_SECRET_PROPERTY);
+  if (!secret) {
+    secret = Utilities.getUuid() + Utilities.getUuid();
+    properties.setProperty(ADMIN_TOKEN_SECRET_PROPERTY, secret);
   }
+  return secret;
 }
 
-function saveAdminSessions_(sessions) {
-  PropertiesService.getScriptProperties().setProperty(ADMIN_SESSION_PROPERTY, JSON.stringify(sessions));
+function base64UrlEncode_(value) {
+  return Utilities.base64EncodeWebSafe(value).replace(/=+$/, '');
 }
 
-function pruneAdminSessions_(sessions) {
-  const now = Date.now();
-  Object.keys(sessions).forEach(function(token) {
-    const session = sessions[token];
-    if (!session || !session.expiresAt || Number(session.expiresAt) <= now) delete sessions[token];
-  });
-  return sessions;
+function base64UrlDecode_(value) {
+  const padded = value + '==='.slice((value.length + 3) % 4);
+  return Utilities.base64DecodeWebSafe(padded);
+}
+
+function createAdminToken_(username, expiresAt) {
+  const payload = base64UrlEncode_(Utilities.newBlob(JSON.stringify({
+    username: username,
+    expiresAt: expiresAt
+  })).getBytes());
+  const signature = base64UrlEncode_(Utilities.computeHmacSha256Signature(payload, getAdminTokenSecret_()));
+  return payload + '.' + signature;
 }
 
 function requireAdminSession_(token) {
-  if (!token) throw new Error('관리자 로그인이 만료되었습니다. 다시 로그인해 주세요.');
-  const sessions = getAdminSessions_();
-  const session = sessions[token];
-  if (!session || !session.expiresAt || Number(session.expiresAt) <= Date.now()) {
-    if (session) {
-      delete sessions[token];
-      saveAdminSessions_(sessions);
-    }
+  if (!token || typeof token !== 'string') {
+    throw new Error('관리자 로그인이 만료되었습니다. 다시 로그인해 주세요.');
+  }
+
+  const parts = token.split('.');
+  if (parts.length !== 2 || !parts[0] || !parts[1]) {
+    throw new Error('관리자 로그인이 만료되었습니다. 다시 로그인해 주세요.');
+  }
+
+  const expectedSignature = base64UrlEncode_(Utilities.computeHmacSha256Signature(parts[0], getAdminTokenSecret_()));
+  if (expectedSignature !== parts[1]) {
+    throw new Error('관리자 로그인이 만료되었습니다. 다시 로그인해 주세요.');
+  }
+
+  let session;
+  try {
+    session = JSON.parse(Utilities.newBlob(base64UrlDecode_(parts[0])).getDataAsString());
+  } catch (error) {
+    throw new Error('관리자 로그인이 만료되었습니다. 다시 로그인해 주세요.');
+  }
+
+  if (!session.username || !session.expiresAt || Number(session.expiresAt) <= Date.now()) {
     throw new Error('관리자 로그인이 만료되었습니다. 다시 로그인해 주세요.');
   }
 }

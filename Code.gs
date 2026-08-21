@@ -148,10 +148,9 @@ function adminLogin(credentials) {
   if (!matched) throw new Error('관리자 아이디 또는 비밀번호가 올바르지 않습니다.');
 
   const token = Utilities.getUuid();
-  CacheService.getScriptCache().put(
+  PropertiesService.getScriptProperties().setProperty(
     ADMIN_SESSION_PREFIX + token,
-    username,
-    CONFIG.ADMIN_SESSION_TTL_SECONDS
+    JSON.stringify({ username: username, expiresAt: Date.now() + CONFIG.ADMIN_SESSION_TTL_SECONDS * 1000 })
   );
   return {
     success: true,
@@ -161,7 +160,7 @@ function adminLogin(credentials) {
 }
 
 function adminLogout(token) {
-  if (token) CacheService.getScriptCache().remove(ADMIN_SESSION_PREFIX + token);
+  if (token) PropertiesService.getScriptProperties().deleteProperty(ADMIN_SESSION_PREFIX + token);
   return { success: true };
 }
 
@@ -252,7 +251,21 @@ function getRawAdminUsersSheet_() {
 }
 
 function requireAdminSession_(token) {
-  if (!token || !CacheService.getScriptCache().get(ADMIN_SESSION_PREFIX + token)) {
+  if (!token) throw new Error('관리자 로그인이 만료되었습니다. 다시 로그인해 주세요.');
+  const key = ADMIN_SESSION_PREFIX + token;
+  const rawSession = PropertiesService.getScriptProperties().getProperty(key);
+  if (!rawSession) throw new Error('관리자 로그인이 만료되었습니다. 다시 로그인해 주세요.');
+
+  let session;
+  try {
+    session = JSON.parse(rawSession);
+  } catch (error) {
+    PropertiesService.getScriptProperties().deleteProperty(key);
+    throw new Error('관리자 로그인이 만료되었습니다. 다시 로그인해 주세요.');
+  }
+
+  if (!session.expiresAt || Number(session.expiresAt) <= Date.now()) {
+    PropertiesService.getScriptProperties().deleteProperty(key);
     throw new Error('관리자 로그인이 만료되었습니다. 다시 로그인해 주세요.');
   }
 }
@@ -316,7 +329,7 @@ function validatePayload_(payload) {
   required.concat(['deviceModel', 'deviceNumber', 'lockType', 'symptoms']).forEach(function(key) {
     if (!clean_(payload[key])) throw new Error('필수 항목을 모두 입력해 주세요.');
   });
-  if (['pattern', 'password'].indexOf(payload.lockType) === -1) throw new Error('기기 잠금 방식을 선택해 주세요.');
+  if (['pattern', 'password', 'none'].indexOf(payload.lockType) === -1) throw new Error('기기 잠금 방식을 선택해 주세요.');
   if (payload.lockType === 'pattern' && !payload.patternImage) throw new Error('패턴 사진을 첨부해 주세요.');
   if (payload.lockType === 'password' && !clean_(payload.devicePassword)) throw new Error('기기 잠금 비밀번호를 입력해 주세요.');
 }

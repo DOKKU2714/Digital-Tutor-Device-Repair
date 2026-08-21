@@ -33,7 +33,6 @@
           <span class="progress-item" data-progress="3"><b>3</b><em>기기 정보</em></span><span class="progress-line"></span>
           <span class="progress-item" data-progress="4"><b>4</b><em>수리 내용</em></span>
         </div>
-
         <section class="wizard-step active" data-step="1" aria-labelledby="request-title">
           <div class="wizard-card">
             <p class="step-kicker">STEP 01</p><h2 id="request-title">누가 수리를 신청하나요?</h2><p class="step-copy">신청자 유형을 선택해 주세요.</p>
@@ -44,7 +43,6 @@
           </div>
           <div class="wizard-actions"><button class="text-button wizard-home" type="button">← 이전</button><span class="wizard-hint">신청자 유형을 선택해 주세요.</span><button class="primary-button wizard-next hidden" type="button" data-next>다음 <span>→</span></button></div>
         </section>
-
         <section class="wizard-step" data-step="2" aria-labelledby="applicant-step-title">
           <div class="wizard-card">
             <p class="step-kicker">STEP 02</p><h2 id="applicant-step-title">신청자 정보를 입력해 주세요</h2><p class="step-copy">수리 완료 안내와 내 신청 조회에 사용됩니다.</p>
@@ -54,10 +52,8 @@
           </div>
           <div class="wizard-actions"><button class="secondary-button wizard-prev" type="button" data-prev>← 이전</button><span class="wizard-hint">필수 항목을 모두 입력해 주세요.</span><button class="primary-button wizard-next hidden" type="button" data-next>다음 <span>→</span></button></div>
         </section>
-
         <section class="wizard-step" data-step="3" aria-labelledby="device-step-title">
-          <div class="wizard-card">
-            <p class="step-kicker">STEP 03</p><h2 id="device-step-title">맡길 기기 정보를 알려주세요</h2><p class="step-copy">기기 뒷면 또는 설정에서 기기 번호를 확인할 수 있습니다.</p>
+          <div class="wizard-card"><p class="step-kicker">STEP 03</p><h2 id="device-step-title">맡길 기기 정보를 알려주세요</h2><p class="step-copy">기기 뒷면 또는 설정에서 기기 번호를 확인할 수 있습니다.</p>
             <div class="form-grid two-col"><label class="field"><span>모델명(기기명) <i>*</i></span><input name="deviceModel" placeholder="예: iPad 9세대" required></label><label class="field"><span>기기 번호 또는 제조 번호 <i>*</i></span><input name="deviceNumber" placeholder="기기 뒷면 또는 설정에서 확인" required></label></div>
             <div class="field"><span>기기 잠금 방식 <i>*</i></span><div class="lock-options" role="radiogroup" aria-label="기기 잠금 방식"><label><input type="radio" name="lockType" value="pattern"><span>패턴</span></label><label><input type="radio" name="lockType" value="password"><span>비밀번호</span></label><label><input type="radio" name="lockType" value="none"><span>잠금 없음</span></label></div></div>
             <label id="pattern-image-field" class="field upload-field hidden"><span>패턴 사진 <i>*</i></span><input id="pattern-image" type="file" accept="image/jpeg,image/png,image/webp"><small>패턴이 보이는 사진을 올려 주세요. 최대 5MB</small><span id="pattern-file-name" class="file-name"></span></label>
@@ -65,10 +61,8 @@
           </div>
           <div class="wizard-actions"><button class="secondary-button wizard-prev" type="button" data-prev>← 이전</button><span class="wizard-hint">필수 항목을 모두 입력해 주세요.</span><button class="primary-button wizard-next hidden" type="button" data-next>다음 <span>→</span></button></div>
         </section>
-
         <section class="wizard-step" data-step="4" aria-labelledby="repair-step-title">
-          <div class="wizard-card">
-            <p class="step-kicker">STEP 04</p><h2 id="repair-step-title">어떤 도움이 필요한가요?</h2><p class="step-copy">증상을 자세히 적어 주시면 더 빠르게 확인할 수 있습니다.</p>
+          <div class="wizard-card"><p class="step-kicker">STEP 04</p><h2 id="repair-step-title">어떤 도움이 필요한가요?</h2><p class="step-copy">증상을 자세히 적어 주시면 더 빠르게 확인할 수 있습니다.</p>
             <label class="field"><span>증상 <i>*</i></span><textarea name="symptoms" rows="5" placeholder="예: 화면이 켜지지 않고 충전 표시도 나오지 않아요." required></textarea></label>
             <label class="field upload-field"><span>사진</span><input id="additional-images" type="file" accept="image/jpeg,image/png,image/webp" multiple><small>증상 확인에 필요한 사진을 추가할 수 있습니다. 사진당 최대 5MB</small><span id="additional-file-name" class="file-name"></span></label>
             <label class="field"><span>참고사항</span><textarea name="referenceNotes" rows="3" placeholder="전달할 내용이 있다면 적어 주세요. (선택)" maxlength="1000"></textarea></label>
@@ -82,7 +76,30 @@
 
     <section id="lookup-screen" class="app-screen" aria-labelledby="lookup-title">
       <div class="screen-topbar"><button class="back-home" type="button"><span aria-hidden="true">←</span> 메인으로</button><span>내 신청 확인</span></div>
-      <form id="lookup-form" novalidate><div class="lookup-card wizard-card"><p class="step-kicker">MY REQUEST</p><h2 id="lookup-title">신청 정보를 입력해 주세요</h2><p class="step-copy">신청할 때 입력한 정보와 일치해야 합니다.</p><div class="segmented-control" role="radiogroup" aria-label="조회 신청자 유형"><label><input type="radio" name="lookupType" value="teacher" checked><span>선생님</span></label><label><input type="radio" name="lookupType" value="student"><span>학생</span></label></div><div id="lookup-teacher-fields" class="form-grid two-col"><label class="field"><span>이름 <i>*</i></span><input name="lookupTeacherName" placeholder="선생님 성함" required></label><label class="field"><span>연락처 <i>*</i></span><input name="lookupTeacherPhone" type="tel" placeholder="연락처" required></label></div><div id="lookup-student-fields" class="form-grid two-col hidden"><label class="field"><span>학번 <i>*</i></span><input name="lookupStudentNumber" placeholder="학번"></label><label class="field"><span>이름 <i>*</i></span><input name="lookupStudentName" placeholder="학생 이름"></label></div><div class="lookup-actions"><button id="lookup-button" class="primary-button" type="submit">신청 내역 조회하기 <span>→</span></button></div></div></form>
+      <form id="lookup-form" novalidate>
+        <div class="wizard-progress" aria-label="내 신청 확인 진행 단계">
+          <span class="progress-item active" data-lookup-progress="1"><b>1</b><em>신청자 유형</em></span><span class="progress-line"></span>
+          <span class="progress-item" data-lookup-progress="2"><b>2</b><em>신청자 정보</em></span>
+        </div>
+        <section class="wizard-step active" data-lookup-step="1" aria-labelledby="lookup-title">
+          <div class="wizard-card">
+            <p class="step-kicker">STEP 01</p><h2 id="lookup-title">누구의 신청을 확인하나요?</h2><p class="step-copy">신청할 때 선택한 신청자 유형을 골라 주세요.</p>
+            <div class="type-choice-grid" role="radiogroup" aria-label="조회 신청자 유형">
+              <label class="type-choice"><input type="radio" name="lookupType" value="teacher" checked><span class="type-icon" aria-hidden="true">♙</span><strong>선생님</strong><small>이름과 연락처로 조회합니다.</small></label>
+              <label class="type-choice"><input type="radio" name="lookupType" value="student"><span class="type-icon" aria-hidden="true">♧</span><strong>학생</strong><small>학번과 이름으로 조회합니다.</small></label>
+            </div>
+          </div>
+          <div class="wizard-actions"><button class="text-button wizard-home" type="button">← 이전</button><span class="wizard-hint">신청자 유형을 선택해 주세요.</span><button class="primary-button lookup-next hidden" type="button">다음 <span>→</span></button></div>
+        </section>
+        <section class="wizard-step" data-lookup-step="2" aria-labelledby="lookup-info-title">
+          <div class="wizard-card">
+            <p class="step-kicker">STEP 02</p><h2 id="lookup-info-title">신청자 정보를 입력해 주세요</h2><p class="step-copy">수리 요청할 때 입력한 정보와 일치해야 합니다.</p>
+            <div id="lookup-teacher-fields" class="form-grid two-col"><label class="field"><span>이름 <i>*</i></span><input name="lookupTeacherName" placeholder="선생님 성함"></label><label class="field"><span>연락처 <i>*</i></span><input name="lookupTeacherPhone" type="tel" placeholder="연락처"></label></div>
+            <div id="lookup-student-fields" class="form-grid two-col hidden"><label class="field"><span>학번 <i>*</i></span><input name="lookupStudentNumber" placeholder="학번"></label><label class="field"><span>이름 <i>*</i></span><input name="lookupStudentName" placeholder="학생 이름"></label></div>
+          </div>
+          <div class="wizard-actions"><button class="secondary-button lookup-prev" type="button">← 이전</button><span class="wizard-hint">필수 항목을 모두 입력해 주세요.</span><button id="lookup-button" class="primary-button lookup-submit hidden" type="submit">신청 내역 조회하기 <span>→</span></button></div>
+        </section>
+      </form>
       <div id="lookup-results" class="results-area" aria-live="polite"></div>
     </section>
 

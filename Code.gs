@@ -7,7 +7,8 @@ const REQUEST_HEADERS = [
   'status', 'rejectionReason', 'updatedAt'
 ];
 const ADMIN_HEADERS = ['username', 'password', 'displayName', 'isActive'];
-const ADMIN_SESSION_PREFIX = 'dtr_admin_session_';
+const ADMIN_SESSION_PROPERTY = 'dtr_admin_sessions';
+const LOCK_TYPES = Object.freeze({ pattern: 'pattern', password: 'password', none: 'none' });
 
 function doGet() {
   return HtmlService.createTemplateFromFile('Index')
@@ -89,8 +90,8 @@ function submitRequest(payload) {
       studentGooglePassword: payload.applicantType === 'student' && CONFIG.STORE_SENSITIVE_DATA ? clean_(payload.studentGooglePassword) : '',
       deviceModel: clean_(payload.deviceModel),
       deviceNumber: clean_(payload.deviceNumber),
-      lockType: clean_(payload.lockType),
-      devicePassword: CONFIG.STORE_SENSITIVE_DATA ? clean_(payload.devicePassword) : '',
+      lockType: payload.lockType,
+      devicePassword: CONFIG.STORE_SENSITIVE_DATA && payload.lockType === LOCK_TYPES.password ? clean_(payload.devicePassword) : '',
       symptoms: clean_(payload.symptoms),
       referenceNotes: clean_(payload.referenceNotes),
       patternImageUrl: uploaded.patternImageUrl,
@@ -148,10 +149,13 @@ function adminLogin(credentials) {
   if (!matched) throw new Error('관리자 아이디 또는 비밀번호가 올바르지 않습니다.');
 
   const token = Utilities.getUuid();
-  PropertiesService.getScriptProperties().setProperty(
-    ADMIN_SESSION_PREFIX + token,
-    JSON.stringify({ username: username, expiresAt: Date.now() + CONFIG.ADMIN_SESSION_TTL_SECONDS * 1000 })
-  );
+  const sessions = pruneAdminSessions_(getAdminSessions_());
+  sessions[token] = {
+    username: username,
+    expiresAt: Date.now() + CONFIG.ADMIN_SESSION_TTL_SECONDS * 1000
+  };
+  saveAdminSessions_(sessions);
+
   return {
     success: true,
     token: token,
@@ -160,7 +164,12 @@ function adminLogin(credentials) {
 }
 
 function adminLogout(token) {
-  if (token) PropertiesService.getScriptProperties().deleteProperty(ADMIN_SESSION_PREFIX + token);
+  if (!token) return { success: true };
+  const sessions = getAdminSessions_();
+  if (sessions[token]) {
+    delete sessions[token];
+    saveAdminSessions_(sessions);
+  }
   return { success: true };
 }
 
@@ -250,22 +259,41 @@ function getRawAdminUsersSheet_() {
   return sheet;
 }
 
+function getAdminSessions_() {
+  const properties = PropertiesService.getScriptProperties();
+  const raw = properties.getProperty(ADMIN_SESSION_PROPERTY);
+  if (!raw) return {};
+  try {
+    const sessions = JSON.parse(raw);
+    return sessions && typeof sessions === 'object' ? sessions : {};
+  } catch (error) {
+    properties.deleteProperty(ADMIN_SESSION_PROPERTY);
+    return {};
+  }
+}
+
+function saveAdminSessions_(sessions) {
+  PropertiesService.getScriptProperties().setProperty(ADMIN_SESSION_PROPERTY, JSON.stringify(sessions));
+}
+
+function pruneAdminSessions_(sessions) {
+  const now = Date.now();
+  Object.keys(sessions).forEach(function(token) {
+    const session = sessions[token];
+    if (!session || !session.expiresAt || Number(session.expiresAt) <= now) delete sessions[token];
+  });
+  return sessions;
+}
+
 function requireAdminSession_(token) {
   if (!token) throw new Error('관리자 로그인이 만료되었습니다. 다시 로그인해 주세요.');
-  const key = ADMIN_SESSION_PREFIX + token;
-  const rawSession = PropertiesService.getScriptProperties().getProperty(key);
-  if (!rawSession) throw new Error('관리자 로그인이 만료되었습니다. 다시 로그인해 주세요.');
-
-  let session;
-  try {
-    session = JSON.parse(rawSession);
-  } catch (error) {
-    PropertiesService.getScriptProperties().deleteProperty(key);
-    throw new Error('관리자 로그인이 만료되었습니다. 다시 로그인해 주세요.');
-  }
-
-  if (!session.expiresAt || Number(session.expiresAt) <= Date.now()) {
-    PropertiesService.getScriptProperties().deleteProperty(key);
+  const sessions = getAdminSessions_();
+  const session = sessions[token];
+  if (!session || !session.expiresAt || Number(session.expiresAt) <= Date.now()) {
+    if (session) {
+      delete sessions[token];
+      saveAdminSessions_(sessions);
+    }
     throw new Error('관리자 로그인이 만료되었습니다. 다시 로그인해 주세요.');
   }
 }
@@ -289,7 +317,9 @@ function assertConfig_() {
 function saveImages_(payload, requestId) {
   const result = { patternImageUrl: '', additionalImageUrls: '' };
   const images = [];
-  if (payload.lockType === 'pattern' && payload.patternImage) images.push({ data: payload.patternImage, prefix: 'pattern' });
+  if (payload.lockType === LOCK_TYPES.pattern && payload.patternImage) {
+    images.push({ data: payload.patternImage, prefix: 'pattern' });
+  }
   (payload.additionalImages || []).forEach(function(image, i) {
     images.push({ data: image, prefix: 'additional-' + (i + 1) });
   });
@@ -299,7 +329,7 @@ function saveImages_(payload, requestId) {
     const blob = dataUrlToBlob_(item.data, requestId + '-' + item.prefix);
     return folder.createFile(blob).getUrl();
   });
-  if (payload.lockType === 'pattern' && payload.patternImage) {
+  if (payload.lockType === LOCK_TYPES.pattern && payload.patternImage) {
     result.patternImageUrl = urls.shift();
   }
   result.additionalImageUrls = urls.join('\n');
@@ -322,16 +352,35 @@ function dataUrlToBlob_(dataUrl, filename) {
 }
 
 function validatePayload_(payload) {
-  if (!payload || (payload.applicantType !== 'teacher' && payload.applicantType !== 'student')) throw new Error('신청자 유형을 선택해 주세요.');
+  if (!payload || (payload.applicantType !== 'teacher' && payload.applicantType !== 'student')) {
+    throw new Error('신청자 유형을 선택해 주세요.');
+  }
+
   const required = payload.applicantType === 'teacher'
     ? ['teacherName', 'teacherPhone']
     : ['studentNumber', 'studentName', 'studentGoogleId', 'studentGooglePassword'];
   required.concat(['deviceModel', 'deviceNumber', 'lockType', 'symptoms']).forEach(function(key) {
     if (!clean_(payload[key])) throw new Error('필수 항목을 모두 입력해 주세요.');
   });
-  if (['pattern', 'password', 'none'].indexOf(payload.lockType) === -1) throw new Error('기기 잠금 방식을 선택해 주세요.');
-  if (payload.lockType === 'pattern' && !payload.patternImage) throw new Error('패턴 사진을 첨부해 주세요.');
-  if (payload.lockType === 'password' && !clean_(payload.devicePassword)) throw new Error('기기 잠금 비밀번호를 입력해 주세요.');
+
+  const lockType = clean_(payload.lockType).toLowerCase();
+  if (!Object.keys(LOCK_TYPES).some(function(key) { return LOCK_TYPES[key] === lockType; })) {
+    throw new Error('기기 잠금 방식을 선택해 주세요.');
+  }
+  payload.lockType = lockType;
+
+  if (lockType === LOCK_TYPES.pattern && !payload.patternImage) {
+    throw new Error('패턴 사진을 첨부해 주세요.');
+  }
+  if (lockType === LOCK_TYPES.password && !clean_(payload.devicePassword)) {
+    throw new Error('기기 잠금 비밀번호를 입력해 주세요.');
+  }
+
+  // 잠금 없음에서는 이전에 입력했던 패턴/비밀번호가 남아 있어도 저장하지 않습니다.
+  if (lockType === LOCK_TYPES.none) {
+    payload.patternImage = '';
+    payload.devicePassword = '';
+  }
 }
 
 function normalizeQuery_(query, type) {

@@ -1,0 +1,164 @@
+<style>
+  .smart-device-check { display:flex; flex-direction:row; align-items:center; gap:10px; margin:2px 0 18px; padding:14px 16px; border:1px solid #d8e5e4; border-radius:12px; color:#33464d; background:#fbfefd; font-size:14px; font-weight:800; cursor:pointer; }
+  .smart-device-check input { width:19px; min-height:19px; margin:0; accent-color:var(--teal); }
+  .smart-device-check:hover { border-color:#a9c9c4; background:#f7fcfb; }
+</style>
+<script>
+  function resetRequestWizard() {
+    const form = $('#request-form');
+    if (!form) return;
+    form.reset();
+    currentRequestStep = 1;
+    $('#pattern-file-name').textContent = '';
+    $('#additional-file-name').textContent = '';
+    updateApplicantFields();
+    updateSmartDeviceFields();
+    updateLockFields();
+    showRequestStep(1, 0);
+  }
+
+  function showRequestStep(step, direction) {
+    currentRequestStep = Math.min(3, Math.max(1, step));
+    document.querySelectorAll('#request-form .wizard-step').forEach(panel => {
+      const isActive = Number(panel.dataset.step) === currentRequestStep;
+      panel.classList.toggle('active', isActive);
+      if (isActive) panel.dataset.direction = direction < 0 ? 'back' : 'forward';
+    });
+    document.querySelectorAll('#request-form .progress-item').forEach(item => {
+      const itemStep = Number(item.dataset.progress);
+      item.classList.toggle('active', itemStep === currentRequestStep);
+      item.classList.toggle('done', itemStep < currentRequestStep);
+    });
+    document.querySelectorAll('#request-form .progress-line').forEach((line, index) => line.classList.toggle('done', index < currentRequestStep - 1));
+    updateWizardNavigation();
+    const title = $('#request-form .wizard-step.active h2');
+    if (title) window.setTimeout(() => {
+      if (!$('#request-screen').classList.contains('active')) return;
+      title.setAttribute('tabindex', '-1');
+      title.focus();
+    }, 120);
+  }
+
+  function advanceRequestStep(direction) {
+    if (direction > 0 && !isStepComplete(currentRequestStep)) {
+      reportCurrentStepValidity();
+      return;
+    }
+    showRequestStep(currentRequestStep + direction, direction);
+  }
+
+  function updateApplicantFields() {
+    const selected = document.querySelector('input[name="applicantType"]:checked');
+    const type = selected ? selected.value : '';
+    const teacherFields = $('#teacher-fields');
+    const studentFields = $('#student-fields');
+    teacherFields.classList.toggle('hidden', type !== 'teacher');
+    studentFields.classList.toggle('hidden', type !== 'student');
+    teacherFields.querySelectorAll('input').forEach(input => { input.required = type === 'teacher'; });
+    studentFields.querySelectorAll('input').forEach(input => { input.required = type === 'student'; });
+  }
+
+  function updateSmartDeviceFields() {
+    const enabled = $('#student-smart-device').checked;
+    const fields = $('#student-device-fields');
+    const privacy = $('#privacy-note');
+    fields.classList.toggle('hidden', !enabled);
+    privacy.classList.toggle('hidden', !enabled);
+    fields.querySelectorAll('input').forEach(input => { input.required = enabled; });
+  }
+
+  function updateLockFields() {
+    const selected = document.querySelector('input[name="lockType"]:checked');
+    const lockType = selected ? selected.value : '';
+    $('#pattern-image-field').classList.toggle('hidden', lockType !== 'pattern');
+    $('#device-password-field').classList.toggle('hidden', lockType !== 'password');
+    $('#pattern-image').required = lockType === 'pattern';
+    $('#request-form').devicePassword.required = lockType === 'password';
+  }
+
+  function isStepComplete(step) {
+    const form = $('#request-form');
+    if (step === 1) {
+      if (!form.querySelector('input[name="applicantType"]:checked')) return false;
+      const panel = form.querySelector('.wizard-step[data-step="1"]');
+      return Array.from(panel.querySelectorAll('[required]')).filter(field => !field.closest('.hidden')).every(field => field.checkValidity());
+    }
+    const panel = form.querySelector('.wizard-step[data-step="' + step + '"]');
+    if (!panel) return false;
+    if (step === 2 && !form.querySelector('input[name="lockType"]:checked')) return false;
+    const requiredFields = Array.from(panel.querySelectorAll('[required]')).filter(field => !field.closest('.hidden'));
+    return requiredFields.every(field => field.checkValidity());
+  }
+
+  function reportCurrentStepValidity() {
+    const panel = $('#request-form .wizard-step.active');
+    const firstInvalid = Array.from(panel.querySelectorAll('[required]')).find(field => !field.closest('.hidden') && !field.checkValidity());
+    if (firstInvalid) {
+      firstInvalid.reportValidity();
+      return;
+    }
+    if (currentRequestStep === 1) showToast('신청자 유형과 정보를 입력해 주세요.', true);
+    else if (currentRequestStep === 2) showToast('기기 정보와 비밀번호 방식을 입력해 주세요.', true);
+  }
+
+  function updateWizardNavigation() {
+    const panel = $('#request-form .wizard-step.active');
+    if (!panel) return;
+    updateSmartDeviceFields();
+    const complete = isStepComplete(currentRequestStep);
+    const next = panel.querySelector('.wizard-next');
+    const hint = panel.querySelector('.wizard-hint');
+    if (next) next.classList.toggle('hidden', !complete);
+    if (hint) hint.textContent = complete ? '입력이 완료되었어요.' : (currentRequestStep === 1 ? '신청자 정보를 입력해 주세요.' : currentRequestStep === 2 ? '필수 항목을 모두 입력해 주세요.' : '증상을 입력해 주세요.');
+  }
+
+  async function submitForm(event) {
+    event.preventDefault();
+    const form = event.target;
+    if (!isStepComplete(3) || !form.reportValidity()) {
+      reportCurrentStepValidity();
+      return;
+    }
+    const button = $('#submit-button');
+    button.disabled = true;
+    button.innerHTML = '사진을 준비하고 접수 중입니다…';
+    showLoading('수리 요청을 접수하는 중입니다…');
+    try {
+      const type = form.querySelector('input[name="applicantType"]:checked').value;
+      const lockType = form.querySelector('input[name="lockType"]:checked').value;
+      const isStudentSmartDevice = $('#student-smart-device').checked;
+      const payload = {
+        applicantType:type,
+        teacherName:form.teacherName.value,
+        teacherPhone:form.teacherPhone.value,
+        studentNumber:form.studentNumber.value,
+        studentName:form.studentName.value,
+        studentGoogleId:isStudentSmartDevice ? form.studentGoogleId.value : '',
+        studentGooglePassword:isStudentSmartDevice ? form.studentGooglePassword.value : '',
+        isStudentSmartDevice,
+        deviceModel:form.deviceModel.value,
+        deviceNumber:form.deviceNumber.value,
+        lockType,
+        devicePassword:form.devicePassword.value,
+        symptoms:form.symptoms.value,
+        referenceNotes:form.referenceNotes.value,
+        patternImage:lockType === 'pattern' ? await fileToDataUrl($('#pattern-image').files[0]) : '',
+        additionalImages:await filesToDataUrls($('#additional-images').files)
+      };
+      validateImageSize(payload.patternImage, '패턴 사진');
+      payload.additionalImages.forEach(data => validateImageSize(data, '추가 사진'));
+      google.script.run.withSuccessHandler(result => {
+        hideLoading();
+        $('#completed-request-id').textContent = result.requestId;
+        resetRequestWizard();
+        button.disabled = false;
+        button.innerHTML = '수리 요청 접수하기 <span>→</span>';
+        switchTab('complete');
+      }).withFailureHandler(error => { hideLoading(); throwServerError(error); resetSubmitButton(button); }).submitRepairRequest(payload);
+    } catch (error) {
+      hideLoading();
+      showToast(error.message || '입력 내용을 확인해 주세요.', true);
+      resetSubmitButton(button);
+    }
+  }
+</script>

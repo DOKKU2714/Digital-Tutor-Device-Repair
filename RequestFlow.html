@@ -19,7 +19,10 @@
 
   function setFieldValidity(input, isValid, message) {
     if (!input) return;
-    input.setCustomValidity(isValid ? '' : message);
+    const value = input.value.trim();
+    const hasValue = value.length > 0;
+    const formatValid = !hasValue || isValid;
+    input.setCustomValidity(formatValid ? '' : message);
     const field = input.closest('.field');
     if (!field) return;
     let warning = field.querySelector('.validation-message');
@@ -28,7 +31,7 @@
       warning.className = 'validation-message hidden';
       field.appendChild(warning);
     }
-    const showError = !isValid && (validationAttempted || input.dataset.validationTouched === 'true');
+    const showError = hasValue && !isValid && (validationAttempted || input.dataset.validationTouched === 'true');
     field.classList.toggle('validation-error', showError);
     warning.classList.toggle('hidden', !showError);
     warning.textContent = showError ? message : '';
@@ -84,7 +87,7 @@
     }
     if (form.devicePassword && !form.devicePassword.closest('.hidden')) {
       const value = form.devicePassword.value;
-      setFieldValidity(form.devicePassword, value.length >= 4 && value.length <= 128, '기기 잠금 비밀번호는 4~128자로 입력해 주세요.');
+      setFieldValidity(form.devicePassword, value.length >= 4 && value.length <= 128, '기기 비밀번호는 4~128자로 입력해 주세요.');
     }
     if (form.symptoms) {
       const value = form.symptoms.value.trim();
@@ -117,12 +120,16 @@
     if (field) {
       const label = field.querySelector('span:first-child');
       const input = field.querySelector('input[name="devicePassword"]');
-      if (label) label.innerHTML = '기기 잠금 <i>*</i>';
-      if (input) input.placeholder = '기기 잠금 비밀번호';
+      if (label) label.innerHTML = '기기 비밀번호 <i>*</i>';
+      if (input) input.placeholder = '기기 비밀번호';
     }
     const lockGroup = $('#request-form .lock-options');
     const lockField = lockGroup ? lockGroup.closest('.field') : null;
-    if (lockField) lockField.classList.add('device-lock-field');
+    if (lockField) {
+      lockField.classList.add('device-lock-field');
+      const label = lockField.firstElementChild;
+      if (label) label.innerHTML = '기기 잠금 <i>*</i>';
+    }
   }
 
   function showRequestStep(step, direction) {

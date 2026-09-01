@@ -4,6 +4,9 @@
   .smart-device-check:hover { border-color:#a9c9c4; background:#f7fcfb; }
   .device-lock-field { margin-top:12px; }
   #request-form .wizard-card > .field:has(.lock-options) { margin-top:12px; }
+  .field.validation-error input,.field.validation-error textarea,.field.validation-error select { border-color:#dc2626; background:#fff7f7; box-shadow:0 0 0 3px #dc26261a; }
+  .field.validation-error > span:first-child { color:#b91c1c; }
+  .validation-message { display:block; margin:0; color:#dc2626; font-size:12px; line-height:1.45; font-weight:700; }
 </style>
 <script>
   const VALIDATION_RULES = {
@@ -12,10 +15,30 @@
     gmail: /^[A-Za-z0-9](?:[A-Za-z0-9.]{0,28})@gmail\.com$/i,
     studentNumber: /^\d{4,10}$/
   };
+  let validationAttempted = false;
 
   function setFieldValidity(input, isValid, message) {
     if (!input) return;
     input.setCustomValidity(isValid ? '' : message);
+    const field = input.closest('.field');
+    if (!field) return;
+    let warning = field.querySelector('.validation-message');
+    if (!warning) {
+      warning = document.createElement('small');
+      warning.className = 'validation-message hidden';
+      field.appendChild(warning);
+    }
+    const showError = !isValid && (validationAttempted || input.dataset.validationTouched === 'true');
+    field.classList.toggle('validation-error', showError);
+    warning.classList.toggle('hidden', !showError);
+    warning.textContent = showError ? message : '';
+  }
+
+  function clearValidationState(form) {
+    if (!form) return;
+    form.querySelectorAll('.validation-error').forEach(field => field.classList.remove('validation-error'));
+    form.querySelectorAll('.validation-message').forEach(message => { message.classList.add('hidden'); message.textContent = ''; });
+    form.querySelectorAll('input, textarea, select').forEach(input => delete input.dataset.validationTouched);
   }
 
   function validateRequestInputs() {
@@ -76,6 +99,8 @@
     const form = $('#request-form');
     if (!form) return;
     form.reset();
+    validationAttempted = false;
+    clearValidationState(form);
     currentRequestStep = 1;
     $('#pattern-file-name').textContent = '';
     $('#additional-file-name').textContent = '';
@@ -125,6 +150,7 @@
   }
 
   function advanceRequestStep(direction) {
+    if (direction > 0) validationAttempted = true;
     validateRequestInputs();
     if (direction > 0 && !isStepComplete(currentRequestStep)) {
       reportCurrentStepValidity();
@@ -180,6 +206,7 @@
   }
 
   function reportCurrentStepValidity() {
+    validationAttempted = true;
     validateRequestInputs();
     const panel = $('#request-form .wizard-step.active');
     const firstInvalid = Array.from(panel.querySelectorAll('[required]')).find(field => !field.closest('.hidden') && !field.checkValidity());
@@ -206,6 +233,7 @@
   async function submitForm(event) {
     event.preventDefault();
     const form = event.target;
+    validationAttempted = true;
     validateRequestInputs();
     if (!isStepComplete(3) || !form.reportValidity()) {
       reportCurrentStepValidity();
@@ -259,11 +287,13 @@
     if (!form) return;
     const inputs = form.querySelectorAll('input, textarea, select');
     inputs.forEach(input => ['input', 'change', 'blur'].forEach(eventName => input.addEventListener(eventName, () => {
+      input.dataset.validationTouched = 'true';
       validateRequestInputs();
       if (currentRequestStep) updateWizardNavigation();
     })));
     const smartDevice = $('#student-smart-device');
     if (smartDevice) smartDevice.addEventListener('change', () => {
+      smartDevice.dataset.validationTouched = 'true';
       updateSmartDeviceFields();
       validateRequestInputs();
       updateWizardNavigation();

@@ -2,8 +2,76 @@
   .smart-device-check { display:flex; flex-direction:row; align-items:center; gap:10px; margin:2px 0 18px; padding:14px 16px; border:1px solid #d8e5e4; border-radius:12px; color:#33464d; background:#fbfefd; font-size:14px; font-weight:800; cursor:pointer; }
   .smart-device-check input { width:19px; min-height:19px; margin:0; accent-color:var(--teal); }
   .smart-device-check:hover { border-color:#a9c9c4; background:#f7fcfb; }
+  .device-lock-field { margin-top:12px; }
+  #request-form .wizard-card > .field:has(.lock-options) { margin-top:12px; }
 </style>
 <script>
+  const VALIDATION_RULES = {
+    name: /^[가-힣A-Za-z][가-힣A-Za-z .'-]{1,19}$/,
+    phone: /^0\d{1,2}-?\d{3,4}-?\d{4}$/,
+    gmail: /^[A-Za-z0-9](?:[A-Za-z0-9.]{0,28})@gmail\.com$/i,
+    studentNumber: /^\d{4,10}$/
+  };
+
+  function setFieldValidity(input, isValid, message) {
+    if (!input) return;
+    input.setCustomValidity(isValid ? '' : message);
+  }
+
+  function validateRequestInputs() {
+    const form = $('#request-form');
+    if (!form) return;
+
+    const validateName = input => {
+      if (!input || input.closest('.hidden')) return;
+      setFieldValidity(input, VALIDATION_RULES.name.test(input.value.trim()), '이름은 한글 또는 영문으로 2~20자 입력해 주세요.');
+    };
+    const validatePhone = input => {
+      if (!input || input.closest('.hidden')) return;
+      setFieldValidity(input, VALIDATION_RULES.phone.test(input.value.replace(/\s/g, '').trim()), '올바른 전화번호를 입력해 주세요. 예: 010-1234-5678');
+    };
+    const validateStudentNumber = input => {
+      if (!input || input.closest('.hidden')) return;
+      setFieldValidity(input, VALIDATION_RULES.studentNumber.test(input.value.trim()), '학번은 숫자 4~10자리로 입력해 주세요.');
+    };
+    const validateGmail = input => {
+      if (!input || input.closest('.hidden')) return;
+      setFieldValidity(input, VALIDATION_RULES.gmail.test(input.value.trim()), '구글 아이디는 @gmail.com 형식으로 입력해 주세요.');
+    };
+
+    validateName(form.teacherName);
+    validateName(form.studentName);
+    validatePhone(form.teacherPhone);
+    validateStudentNumber(form.studentNumber);
+
+    if ($('#student-device-fields') && !$('#student-device-fields').classList.contains('hidden')) {
+      validateGmail(form.studentGoogleId);
+      if (form.studentGooglePassword) {
+        setFieldValidity(form.studentGooglePassword, form.studentGooglePassword.value.trim().length >= 4 && form.studentGooglePassword.value.length <= 128, '구글 비밀번호는 4~128자로 입력해 주세요.');
+      }
+    }
+
+    if (form.deviceModel) {
+      const value = form.deviceModel.value.trim();
+      setFieldValidity(form.deviceModel, value.length >= 2 && value.length <= 100, '기기명은 2~100자로 입력해 주세요.');
+    }
+    if (form.deviceNumber) {
+      const value = form.deviceNumber.value.trim();
+      setFieldValidity(form.deviceNumber, value.length >= 3 && value.length <= 100, '제조번호는 3~100자로 입력해 주세요.');
+    }
+    if (form.devicePassword && !form.devicePassword.closest('.hidden')) {
+      const value = form.devicePassword.value;
+      setFieldValidity(form.devicePassword, value.length >= 4 && value.length <= 128, '기기 잠금 비밀번호는 4~128자로 입력해 주세요.');
+    }
+    if (form.symptoms) {
+      const value = form.symptoms.value.trim();
+      setFieldValidity(form.symptoms, value.length >= 5 && value.length <= 2000, '증상은 5~2000자로 입력해 주세요.');
+    }
+    if (form.referenceNotes) {
+      setFieldValidity(form.referenceNotes, form.referenceNotes.value.length <= 1000, '참고사항은 1000자 이내로 입력해 주세요.');
+    }
+  }
+
   function resetRequestWizard() {
     const form = $('#request-form');
     if (!form) return;
@@ -14,7 +82,22 @@
     updateApplicantFields();
     updateSmartDeviceFields();
     updateLockFields();
+    renameDeviceLockLabel();
+    validateRequestInputs();
     showRequestStep(1, 0);
+  }
+
+  function renameDeviceLockLabel() {
+    const field = $('#device-password-field');
+    if (field) {
+      const label = field.querySelector('span:first-child');
+      const input = field.querySelector('input[name="devicePassword"]');
+      if (label) label.innerHTML = '기기 잠금 <i>*</i>';
+      if (input) input.placeholder = '기기 잠금 비밀번호';
+    }
+    const lockGroup = $('#request-form .lock-options');
+    const lockField = lockGroup ? lockGroup.closest('.field') : null;
+    if (lockField) lockField.classList.add('device-lock-field');
   }
 
   function showRequestStep(step, direction) {
@@ -30,7 +113,9 @@
       item.classList.toggle('done', itemStep < currentRequestStep);
     });
     document.querySelectorAll('#request-form .progress-line').forEach((line, index) => line.classList.toggle('done', index < currentRequestStep - 1));
+    validateRequestInputs();
     updateWizardNavigation();
+    renameDeviceLockLabel();
     const title = $('#request-form .wizard-step.active h2');
     if (title) window.setTimeout(() => {
       if (!$('#request-screen').classList.contains('active')) return;
@@ -40,6 +125,7 @@
   }
 
   function advanceRequestStep(direction) {
+    validateRequestInputs();
     if (direction > 0 && !isStepComplete(currentRequestStep)) {
       reportCurrentStepValidity();
       return;
@@ -59,9 +145,10 @@
   }
 
   function updateSmartDeviceFields() {
-    const enabled = $('#student-smart-device').checked;
+    const checkbox = $('#student-smart-device');
     const fields = $('#student-device-fields');
     const privacy = $('#privacy-note');
+    const enabled = Boolean(checkbox && checkbox.checked);
     fields.classList.toggle('hidden', !enabled);
     privacy.classList.toggle('hidden', !enabled);
     fields.querySelectorAll('input').forEach(input => { input.required = enabled; });
@@ -74,9 +161,11 @@
     $('#device-password-field').classList.toggle('hidden', lockType !== 'password');
     $('#pattern-image').required = lockType === 'pattern';
     $('#request-form').devicePassword.required = lockType === 'password';
+    renameDeviceLockLabel();
   }
 
   function isStepComplete(step) {
+    validateRequestInputs();
     const form = $('#request-form');
     if (step === 1) {
       if (!form.querySelector('input[name="applicantType"]:checked')) return false;
@@ -91,30 +180,33 @@
   }
 
   function reportCurrentStepValidity() {
+    validateRequestInputs();
     const panel = $('#request-form .wizard-step.active');
     const firstInvalid = Array.from(panel.querySelectorAll('[required]')).find(field => !field.closest('.hidden') && !field.checkValidity());
     if (firstInvalid) {
       firstInvalid.reportValidity();
       return;
     }
-    if (currentRequestStep === 1) showToast('신청자 유형과 정보를 입력해 주세요.', true);
-    else if (currentRequestStep === 2) showToast('기기 정보와 비밀번호 방식을 입력해 주세요.', true);
+    if (currentRequestStep === 1) showToast('신청자 유형과 정보를 올바르게 입력해 주세요.', true);
+    else if (currentRequestStep === 2) showToast('기기 정보와 기기 잠금 정보를 올바르게 입력해 주세요.', true);
   }
 
   function updateWizardNavigation() {
     const panel = $('#request-form .wizard-step.active');
     if (!panel) return;
     updateSmartDeviceFields();
+    validateRequestInputs();
     const complete = isStepComplete(currentRequestStep);
     const next = panel.querySelector('.wizard-next');
     const hint = panel.querySelector('.wizard-hint');
     if (next) next.classList.toggle('hidden', !complete);
-    if (hint) hint.textContent = complete ? '입력이 완료되었어요.' : (currentRequestStep === 1 ? '신청자 정보를 입력해 주세요.' : currentRequestStep === 2 ? '필수 항목을 모두 입력해 주세요.' : '증상을 입력해 주세요.');
+    if (hint) hint.textContent = complete ? '입력이 완료되었어요.' : (currentRequestStep === 1 ? '신청자 정보를 입력해 주세요.' : currentRequestStep === 2 ? '필수 항목을 올바르게 입력해 주세요.' : '증상을 입력해 주세요.');
   }
 
   async function submitForm(event) {
     event.preventDefault();
     const form = event.target;
+    validateRequestInputs();
     if (!isStepComplete(3) || !form.reportValidity()) {
       reportCurrentStepValidity();
       return;
@@ -161,4 +253,24 @@
       resetSubmitButton(button);
     }
   }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    const form = $('#request-form');
+    if (!form) return;
+    const inputs = form.querySelectorAll('input, textarea, select');
+    inputs.forEach(input => ['input', 'change', 'blur'].forEach(eventName => input.addEventListener(eventName, () => {
+      validateRequestInputs();
+      if (currentRequestStep) updateWizardNavigation();
+    })));
+    const smartDevice = $('#student-smart-device');
+    if (smartDevice) smartDevice.addEventListener('change', () => {
+      updateSmartDeviceFields();
+      validateRequestInputs();
+      updateWizardNavigation();
+    });
+    renameDeviceLockLabel();
+    validateRequestInputs();
+    updateSmartDeviceFields();
+    updateLockFields();
+  });
 </script>

@@ -61,14 +61,14 @@ function validateRepairRequestV2_(payload) {
 
   if (payload.applicantType === 'teacher') {
     const phone = clean_(payload.teacherPhone).replace(/\s/g, '');
-    if (!/^01[016789]-?\d{3,4}-?\d{4}$/.test(phone)) {
-      throw new Error('올바른 휴대전화 번호를 입력해 주세요. 예: 010-1234-5678');
+    if (!/^0\d{1,2}-?\d{3,4}-?\d{4}$/.test(phone)) {
+      throw new Error('올바른 전화번호를 입력해 주세요. 예: 010-1234-5678');
     }
   } else {
     const studentNumber = clean_(payload.studentNumber);
     if (!/^\d{4,10}$/.test(studentNumber)) {
       throw new Error('학번은 숫자 4~10자리로 입력해 주세요.');
-  }
+    }
   }
 
   const deviceModel = clean_(payload.deviceModel);
@@ -86,7 +86,7 @@ function validateRepairRequestV2_(payload) {
     if (!studentGoogleId || !studentGooglePassword) {
       throw new Error('학생용 스마트기기의 구글 아이디와 비밀번호를 입력해 주세요.');
     }
-    if (!/^[A-Za-z0-9](?:[A-Za-z0-9._%+-]{0,63})@gmail\.com$/i.test(studentGoogleId)) {
+    if (!/^[A-Za-z0-9](?:[A-Za-z0-9.]{0,28})@gmail\.com$/i.test(studentGoogleId)) {
       throw new Error('구글 아이디는 @gmail.com 형식으로 입력해 주세요.');
     }
     if (studentGooglePassword.length < 4 || studentGooglePassword.length > 128) {
@@ -117,4 +117,34 @@ function validateRepairRequestV2_(payload) {
     payload.patternImage = '';
     payload.devicePassword = '';
   }
+}
+
+/** 신청 조회 입력도 서버에서 형식을 검증한 뒤 기존 조회 로직으로 전달합니다. */
+function findMyRequestsValidated(query) {
+  const applicantType = query && query.applicantType;
+  if (applicantType !== 'teacher' && applicantType !== 'student') {
+    throw new Error('신청자 유형을 선택해 주세요.');
+  }
+
+  if (applicantType === 'teacher') {
+    const name = clean_(query.teacherName);
+    const phone = clean_(query.teacherPhone).replace(/\s/g, '');
+    if (!/^[가-힣A-Za-z][가-힣A-Za-z .'-]{1,19}$/.test(name)) {
+      throw new Error('이름은 한글 또는 영문으로 2~20자 입력해 주세요.');
+    }
+    if (!/^0\d{1,2}-?\d{3,4}-?\d{4}$/.test(phone)) {
+      throw new Error('올바른 전화번호를 입력해 주세요. 예: 010-1234-5678');
+    }
+  } else {
+    const studentNumber = clean_(query.studentNumber);
+    const studentName = clean_(query.studentName);
+    if (!/^\d{4,10}$/.test(studentNumber)) {
+      throw new Error('학번은 숫자 4~10자리로 입력해 주세요.');
+    }
+    if (!/^[가-힣A-Za-z][가-힣A-Za-z .'-]{1,19}$/.test(studentName)) {
+      throw new Error('이름은 한글 또는 영문으로 2~20자 입력해 주세요.');
+    }
+  }
+
+  return findMyRequests(query);
 }

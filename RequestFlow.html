@@ -3,12 +3,13 @@
   .smart-device-check input { width:19px; min-height:19px; margin:0; accent-color:var(--teal); }
   .smart-device-check:hover { border-color:#a9c9c4; background:#f7fcfb; }
   .device-lock-field { margin-top:12px; }
+  #request-form .wizard-card > .field:has(.lock-options) { margin-top:12px; }
 </style>
 <script>
   const VALIDATION_RULES = {
     name: /^[가-힣A-Za-z][가-힣A-Za-z .'-]{1,19}$/,
-    phone: /^01[016789]-?\d{3,4}-?\d{4}$/,
-    gmail: /^[A-Za-z0-9](?:[A-Za-z0-9._%+-]{0,63})@gmail\.com$/i,
+    phone: /^0\d{1,2}-?\d{3,4}-?\d{4}$/,
+    gmail: /^[A-Za-z0-9](?:[A-Za-z0-9.]{0,28})@gmail\.com$/i,
     studentNumber: /^\d{4,10}$/
   };
 
@@ -27,7 +28,7 @@
     };
     const validatePhone = input => {
       if (!input || input.closest('.hidden')) return;
-      setFieldValidity(input, VALIDATION_RULES.phone.test(input.value.replace(/\s/g, '').trim()), '올바른 휴대전화 번호를 입력해 주세요. 예: 010-1234-5678');
+      setFieldValidity(input, VALIDATION_RULES.phone.test(input.value.replace(/\s/g, '').trim()), '올바른 전화번호를 입력해 주세요. 예: 010-1234-5678');
     };
     const validateStudentNumber = input => {
       if (!input || input.closest('.hidden')) return;
@@ -88,13 +89,15 @@
 
   function renameDeviceLockLabel() {
     const field = $('#device-password-field');
-    if (!field) return;
-    const label = field.querySelector('span:first-child');
-    const input = field.querySelector('input[name="devicePassword"]');
-    if (label) label.innerHTML = '기기 잠금 <i>*</i>';
-    if (input) input.placeholder = '기기 잠금 비밀번호';
-    const container = field.closest('.wizard-card') && field.closest('.wizard-card').querySelector('.device-lock-field');
-    if (container) container.classList.add('device-lock-field');
+    if (field) {
+      const label = field.querySelector('span:first-child');
+      const input = field.querySelector('input[name="devicePassword"]');
+      if (label) label.innerHTML = '기기 잠금 <i>*</i>';
+      if (input) input.placeholder = '기기 잠금 비밀번호';
+    }
+    const lockGroup = $('#request-form .lock-options');
+    const lockField = lockGroup ? lockGroup.closest('.field') : null;
+    if (lockField) lockField.classList.add('device-lock-field');
   }
 
   function showRequestStep(step, direction) {
@@ -158,8 +161,6 @@
     $('#device-password-field').classList.toggle('hidden', lockType !== 'password');
     $('#pattern-image').required = lockType === 'pattern';
     $('#request-form').devicePassword.required = lockType === 'password';
-    const lockField = document.querySelector('#device-password-field');
-    if (lockField) lockField.classList.add('device-lock-field');
     renameDeviceLockLabel();
   }
 
